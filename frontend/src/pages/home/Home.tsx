@@ -18,10 +18,11 @@ interface HeadlinesData {
 const Home = () => {
   const [headlinesData, setHeadlinesData] = useState<HeadlinesData[]>([]);
   const navigate = useNavigate();
+  const API_URL = process.env.REACT_APP_API_URL;
   const getHeadlines = async () => {
     try {
       const url = "https://www.channelnewsasia.com/";
-      const response = await axios.post("http://localhost:3002/scrapeCNA", {
+      const response = await axios.post(`${API_URL}scrapeCNA`, {
         url,
       });
       console.log({ response });
