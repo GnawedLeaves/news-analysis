@@ -25,7 +25,6 @@ const Home = () => {
       const response = await axios.post(`${API_URL}scrapeCNA`, {
         url,
       });
-      console.log({ response });
       if (response) {
         setHeadlinesData(response.data.data);
       }
