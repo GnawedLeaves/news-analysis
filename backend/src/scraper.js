@@ -13,6 +13,69 @@ router.get("/", (req, res) => {
   res.send("Scraper API is up!");
 });
 
+router.post("/scrapeCNA", async (req, res) => {
+  const { url } = req.body || cnaBaseUrl;
+  if (!url) return;
+  try {
+    const response = await axios.get(url);
+    const $ = cheerio.load(response.data);
+    const headlines = [];
+
+    //headline (feature card)
+    $(".feature-card__content").each((_i, element) => {
+      const headlineElement = $(element).find("a.feature-card__heading-link");
+      const categoryElement = $(element).find("p.feature-card__category a");
+
+      const text = headlineElement.text().trim();
+      const category = categoryElement.text().trim();
+      const link = headlineElement.attr("href");
+
+      if (text && link) {
+        headlines.push({
+          text,
+          link: link.startsWith("http")
+            ? link
+            : `https://www.channelnewsasia.com${link}`,
+          category,
+        });
+      }
+    });
+
+    //sub-headlines
+    $(".list-object").each((_index, element) => {
+      const headlineElement = $(element).find(
+        "a.h6__link.list-object__heading-link"
+      );
+      const categoryElement = $(element).find("p.list-object__category a");
+
+      const text = headlineElement.text().trim();
+      const link = headlineElement.attr("href");
+      const category = categoryElement.text().trim();
+
+      if (text && link) {
+        headlines.push({
+          text,
+          link: link.startsWith("http")
+            ? link
+            : `https://www.channelnewsasia.com${link}`,
+          category,
+        });
+      }
+    });
+
+    res.json({
+      length: headlines.length,
+      message: "Headlines scraped",
+      data: headlines,
+    });
+  } catch (err) {
+    res.status(500).json({
+      message: "Error scraping CNA headlines",
+      error: e.message,
+    });
+  }
+});
+
 router.post("/scrapeExample1", async (req, res) => {
   const { url } = req.body || quotesToScrapeUrl;
   if (!url) return;
@@ -21,10 +84,18 @@ router.post("/scrapeExample1", async (req, res) => {
     const $ = cheerio.load(response.data);
     const quotes = [];
 
-    $(".quote").each((index, quote) => {
-      const text = $(quote).find(".text").text();
+    $(".quote").each((index, element) => {
+      const text = $(element).find(".text").text();
       quotes.push(text);
     });
+
+    //scraping tags
+    $(".tag").each((_index, element) => {
+      const text = $(element).text();
+      const link = $(element).attr("href");
+      quotes.push({ text: text, link: link });
+    });
+
     fs.writeFile("data/quotesData.json", JSON.stringify(quotes), (err) => {
       if (err) throw err;
       console.log("file successfully saved");
@@ -39,68 +110,6 @@ router.post("/scrapeExample1", async (req, res) => {
     res.status(500).json({
       message: "Error scraping CNA headlines",
       error: e.message,
-    });
-  }
-});
-router.post("/scrapeCNA", async (req, res) => {
-  try {
-    // Use the CNA homepage URL directly
-    const response = await axios.get(cnaBaseUrl);
-    const $ = cheerio.load(response.data);
-    const headlines = [];
-
-    // This selector might need adjustment based on CNA's actual HTML structure
-    // Looking for main headline articles on the landing page
-    $("article.feature-card, article.list-object").each((i, el) => {
-      const article = $(el);
-      const titleElement = article.find(
-        "h3, h2, .feature-card__title, .list-object__heading, .h6"
-      );
-      const title = titleElement.text().trim();
-
-      // Find the link - CNA typically has anchor tags wrapping headlines
-      let link = article.find("a").attr("href");
-
-      // Some links might be relative, so we need to make them absolute
-      if (link && !link.startsWith("http")) {
-        link = cnaBaseUrl + link;
-      }
-
-      // Find the category/section if available
-      const category = article
-        .find(".category-label, .list-object__category")
-        .text()
-        .trim();
-
-      // Find image URL if available
-      let imageUrl =
-        article.find("img").attr("src") || article.find("img").attr("data-src");
-
-      // Only add if we have at least a title and link
-      if (title && link) {
-        headlines.push({
-          title,
-          link,
-          category: category || "Uncategorized",
-          imageUrl,
-        });
-      }
-    });
-
-    // Save the headlines to a file
-    const filename = `cna_headlines_${Date.now()}.json`;
-    saveProductJson(headlines, filename);
-
-    res.json({
-      headlines_saved: headlines.length,
-      message: "Headlines scraped successfully",
-      filename,
-      data: headlines, // Return the data in the response too
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Error scraping CNA headlines",
-      error: error.message,
     });
   }
 });
