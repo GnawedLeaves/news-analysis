@@ -2,7 +2,8 @@ import { Suspense } from "react";
 import "./App.css";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import Home from "./pages/home/Home";
-import ChartMain from "./pages/charts/ChartMain";
+import ChartExamples from "./pages/charts/ChartExamples";
+import { APP_ROUTES } from "./routes";
 
 function App() {
   return (
@@ -10,9 +11,8 @@ function App() {
       <Suspense>
         <Routes>
           <Route path="/*" element={<Home />} />
-          <Route path="/login" element={<Home />} />
-          <Route path="/home" element={<Home />} />
-          <Route path="/charts" element={<ChartMain />} />
+          <Route path={APP_ROUTES.home} element={<Home />} />
+          <Route path={APP_ROUTES.chartExamples} element={<ChartExamples />} />
         </Routes>
       </Suspense>
     </BrowserRouter>

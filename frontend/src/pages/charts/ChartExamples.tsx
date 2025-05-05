@@ -34,7 +34,7 @@ ChartJS.register(
   RadialLinearScale
 );
 
-const ChartMain = () => {
+const ChartExamples = () => {
   const data = {
     labels: ["Apples,", "Bananas", "Pears", "Cookies"],
     datasets: [
@@ -170,4 +170,4 @@ const ChartMain = () => {
   );
 };
 
-export default ChartMain;
+export default ChartExamples;
