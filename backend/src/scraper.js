@@ -38,6 +38,12 @@ router.post("/scrapeCNA", async (req, res) => {
 
       const imageUrl = imageElement.attr("src");
 
+      const timeElement = $(element).find("span.feature-card__timestamp");
+      const unixTime = timeElement.attr("data-lastupdated");
+      const publishedAt = unixTime
+        ? new Date(parseInt(unixTime, 10) * 1000).toISOString()
+        : null;
+
       if (text && link) {
         headlines.push({
           text,
@@ -46,6 +52,7 @@ router.post("/scrapeCNA", async (req, res) => {
             : `https://www.channelnewsasia.com${link}`,
           category,
           image: imageUrl || null,
+          publishedAt,
         });
       }
     });
