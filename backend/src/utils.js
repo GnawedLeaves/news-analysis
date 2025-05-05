@@ -32,22 +32,27 @@ const generateFilename = () => {
   return filename;
 };
 
-const saveProductJson = (products) => {
-  // create a new file with a unique filename using the generateFilename function
-  const filename = generateFilename();
+// Updated to handle custom filenames
+const saveProductJson = (products, customFilename = null) => {
+  // Use custom filename if provided, otherwise generate one
+  const filename = customFilename || generateFilename();
+
   // JSON.stringify() converts the products array into a string
   const jsonProducts = JSON.stringify(products, null, 2);
 
   // If env == test create a test data folder, else create a data folder
   const folder = process.env.NODE_ENV === "test" ? "test-data" : "data";
+
   // create a new folder if it doesn't exist
   if (!fs.existsSync(folder)) {
     fs.mkdirSync(folder);
   }
+
   // write the file to the data folder
   fs.writeFileSync(`${folder}/${filename}`, jsonProducts);
+
   // return the path to the file
-  return `./data/${filename}`;
+  return `${folder}/${filename}`;
 };
 
 // Export the functions
