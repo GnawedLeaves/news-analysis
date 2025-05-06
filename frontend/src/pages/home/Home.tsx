@@ -2,11 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { APP_ROUTES } from "../../routes";
 import { useEffect, useState } from "react";
 import axios from "axios";
-import {
-  convertISOtoDDMMYYYY,
-  formatDateWithTime,
-  timeAgo,
-} from "../../globalUtils";
+import { timeAgo } from "../../globalUtils";
 
 interface HeadlinesData {
   text: string;
@@ -18,7 +14,8 @@ interface HeadlinesData {
 const Home = () => {
   const [headlinesData, setHeadlinesData] = useState<HeadlinesData[]>([]);
   const navigate = useNavigate();
-  const API_URL = process.env.REACT_APP_API_URL;
+  const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3002/";
+
   const getHeadlines = async () => {
     try {
       const url = "https://www.channelnewsasia.com/";
