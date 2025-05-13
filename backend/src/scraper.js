@@ -107,6 +107,46 @@ router.post("/scrapeCNA", async (req, res) => {
   }
 });
 
+async function scrapeSteamReviews(appId, numReviews = 10) {
+  const url = `https://store.steampowered.com/appreviews/${appId}?json=1&num_per_page=${numReviews}&language=english`;
+
+  try {
+    const response = await axios.get(url);
+    const reviews = response.data.reviews;
+
+    const parsed = reviews.map((r) => ({
+      reviewText: r.review,
+      recommended: r.voted_up,
+      hoursPlayed: r.author.playtime_forever / 60,
+      postedAt: new Date(r.timestamp_created * 1000).toISOString(),
+    }));
+
+    console.log(parsed);
+    return parsed;
+  } catch (err) {
+    console.error("Error fetching reviews:", err.message);
+    return [];
+  }
+}
+
+router.post("/scrapeSteamReviews", async (req, res) => {
+  const { appId, count } = req.body;
+
+  if (!appId) {
+    return res.status(400).json({ message: "appId is required" });
+  }
+
+  try {
+    const reviews = await scrapeSteamReviews(appId, count || 10);
+
+    res.json({ length: reviews.length, reviews });
+  } catch (e) {
+    res
+      .status(500)
+      .json({ message: "Error scraping reviews", error: e.message });
+  }
+});
+
 router.post("/scrapeExample1", async (req, res) => {
   const { url } = req.body || quotesToScrapeUrl;
   if (!url) return;
