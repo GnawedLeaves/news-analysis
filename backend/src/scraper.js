@@ -4,6 +4,8 @@ const router = require("express").Router();
 // Fix to match your utils.js file structure
 const { generateFilename, saveProductJson, generateTitle } = require("./utils");
 const fs = require("fs");
+const path = require("path");
+const { Parser } = require("json2csv");
 
 const baseUrl = "https://www.amazon.com";
 const cnaBaseUrl = "https://www.channelnewsasia.com";
@@ -147,6 +149,87 @@ router.post("/scrapeSteamReviews", async (req, res) => {
   }
 });
 
+// New endpoint to scrape multiple games and generate a CSV
+router.post("/scrapeSteamReviewsCSV", async (req, res) => {
+  const { games, count } = req.body;
+
+  if (!games || !Array.isArray(games) || games.length === 0) {
+    return res.status(400).json({ message: "Valid games array is required" });
+  }
+
+  try {
+    // Create a directory for downloads if it doesn't exist
+    const downloadDir = path.join(__dirname, "..", "data", "downloads");
+    if (!fs.existsSync(downloadDir)) {
+      fs.mkdirSync(downloadDir, { recursive: true });
+    }
+
+    // Track progress for frontend updates
+    let processedGames = 0;
+    const totalGames = games.length;
+
+    // Array to store all reviews
+    const allReviews = [];
+
+    // Process each game sequentially
+    for (const game of games) {
+      // Send progress update via SSE or WebSocket if implemented
+      processedGames++;
+      console.log(
+        `Scraping game ${processedGames}/${totalGames}: ${game.name}`
+      );
+
+      // Scrape reviews for the current game
+      const reviews = await scrapeSteamReviews(game.appId, count || 10);
+
+      // Add game info to each review
+      const reviewsWithGameInfo = reviews.map((review) => ({
+        gameName: game.name,
+        appId: game.appId,
+        ...review,
+      }));
+
+      // Add to the collection
+      allReviews.push(...reviewsWithGameInfo);
+    }
+
+    // Generate CSV from all reviews
+    const fields = [
+      { label: "Game Title", value: "gameName" },
+      { label: "Steam App ID", value: "appId" },
+      { label: "Review Content", value: "reviewText" },
+      { label: "Is Recommended", value: "recommended" },
+      { label: "Hours Played", value: "hoursPlayed" },
+      { label: "Review Date", value: "postedAt" },
+    ];
+    const json2csvParser = new Parser({ fields });
+    const csv = json2csvParser.parse(allReviews);
+
+    // Save CSV file
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filename = `steam_reviews_${timestamp}.csv`;
+    const filePath = path.join(downloadDir, filename);
+
+    fs.writeFileSync(filePath, csv);
+
+    // Return download URL and processed data
+    const downloadUrl = `/downloads/${filename}`;
+
+    res.json({
+      message: `Successfully scraped ${totalGames} games and generated CSV`,
+      gamesProcessed: totalGames,
+      totalReviews: allReviews.length,
+      downloadUrl,
+      previewData: allReviews.slice(0, 5), // Send first 5 reviews as preview
+    });
+  } catch (e) {
+    console.error("Error scraping reviews for CSV:", e);
+    res.status(500).json({
+      message: "Error scraping reviews for CSV",
+      error: e.message,
+    });
+  }
+});
 router.post("/scrapeExample1", async (req, res) => {
   const { url } = req.body || quotesToScrapeUrl;
   if (!url) return;
