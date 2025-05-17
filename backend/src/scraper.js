@@ -149,7 +149,373 @@ router.post("/scrapeSteamReviews", async (req, res) => {
   }
 });
 
-// New endpoint to scrape multiple games and generate a CSV
+router.post("/scrapeSteamReviewsFilterAndDuplicatesCSV", async (req, res) => {
+  const { games, count, filterThreshold } = req.body;
+
+  if (!games || !Array.isArray(games) || games.length === 0) {
+    return res.status(400).json({ message: "Valid games array is required" });
+  }
+
+  // Default threshold - if more than 50% non-alphanumeric characters, skip the review
+  const nonAlphaThreshold =
+    filterThreshold !== undefined ? filterThreshold : 0.5;
+
+  try {
+    // Create a directory for downloads if it doesn't exist
+    const downloadDir = path.join(__dirname, "..", "data", "downloads");
+    if (!fs.existsSync(downloadDir)) {
+      fs.mkdirSync(downloadDir, { recursive: true });
+    }
+
+    // Track progress for frontend updates
+    let processedGames = 0;
+    const totalGames = games.length;
+
+    // Array to store all reviews
+    const allReviews = [];
+    const skippedReviews = {
+      total: 0,
+      byGame: {},
+      duplicates: 0,
+      nonAlphaNumeric: 0,
+    };
+
+    // Function to check if a review contains too many non-alphanumeric characters
+    const hasTooManyNonAlphaNumeric = (text) => {
+      if (!text) return true; // Skip empty reviews
+
+      // Count alphanumeric characters
+      const alphaNumericCount = (text.match(/[a-zA-Z0-9]/g) || []).length;
+      const totalLength = text.length;
+
+      // Calculate ratio of non-alphanumeric characters
+      if (totalLength === 0) return true;
+      const nonAlphaNumericRatio = 1 - alphaNumericCount / totalLength;
+
+      return nonAlphaNumericRatio > nonAlphaThreshold;
+    };
+
+    // Set to track unique review content to prevent duplicates
+    const uniqueReviewTexts = new Set();
+
+    // Function to check if a review is a duplicate
+    const isDuplicate = (text) => {
+      if (!text) return true;
+
+      // Normalize text for comparison (lowercase, remove extra spaces)
+      const normalizedText = text.toLowerCase().trim().replace(/\s+/g, " ");
+
+      // Check for short reviews (likely not meaningful)
+      if (normalizedText.length < 20) return true;
+
+      if (uniqueReviewTexts.has(normalizedText)) {
+        return true;
+      }
+
+      uniqueReviewTexts.add(normalizedText);
+      return false;
+    };
+
+    // Process each game sequentially
+    for (const game of games) {
+      // Send progress update via SSE or WebSocket if implemented
+      processedGames++;
+      console.log(
+        `Scraping game ${processedGames}/${totalGames}: ${game.name}`
+      );
+
+      // Initialize skip count for this game
+      skippedReviews.byGame[game.name] = {
+        total: 0,
+        duplicates: 0,
+        nonAlphaNumeric: 0,
+      };
+
+      // We'll need to potentially scrape more than the requested count
+      // to account for skipped reviews
+      let validReviewsCount = 0;
+      let totalScraped = 0;
+      let validReviews = [];
+
+      // Continue scraping until we reach the requested count
+      // or until we've scraped a reasonable amount beyond the requested count
+      // to avoid potential infinite loops
+      const maxAttempts = (count || 10) * 5; // Max 5x the requested count as a safety limit
+
+      while (validReviewsCount < (count || 10) && totalScraped < maxAttempts) {
+        // Scrape a batch of reviews (adjust batch size as needed)
+        const batchSize = Math.min(50, (count || 10) - validReviewsCount + 20);
+        const reviewBatch = await scrapeSteamReviews(
+          game.appId,
+          batchSize,
+          totalScraped
+        );
+
+        if (reviewBatch.length === 0) {
+          // No more reviews available
+          break;
+        }
+
+        totalScraped += reviewBatch.length;
+
+        // Filter the batch and add valid reviews
+        for (const review of reviewBatch) {
+          // Check for non-alphanumeric first
+          if (hasTooManyNonAlphaNumeric(review.reviewText)) {
+            skippedReviews.total++;
+            skippedReviews.byGame[game.name].total++;
+            skippedReviews.byGame[game.name].nonAlphaNumeric++;
+            skippedReviews.nonAlphaNumeric++;
+            continue;
+          }
+
+          // Then check for duplicates
+          if (isDuplicate(review.reviewText)) {
+            skippedReviews.total++;
+            skippedReviews.byGame[game.name].total++;
+            skippedReviews.byGame[game.name].duplicates++;
+            skippedReviews.duplicates++;
+            continue;
+          }
+
+          // If we passed both checks, add to valid reviews
+          validReviews.push(review);
+          validReviewsCount++;
+
+          // Break if we've reached our target
+          if (validReviewsCount >= (count || 10)) {
+            break;
+          }
+        }
+      }
+
+      console.log(
+        `Game ${game.name}: collected ${validReviewsCount} valid reviews, ` +
+          `skipped ${skippedReviews.byGame[game.name].total} total ` +
+          `(${
+            skippedReviews.byGame[game.name].nonAlphaNumeric
+          } non-alphanumeric, ` +
+          `${skippedReviews.byGame[game.name].duplicates} duplicates)`
+      );
+
+      // Add game info to each valid review
+      const reviewsWithGameInfo = validReviews.map((review) => ({
+        gameName: game.name,
+        appId: game.appId,
+        ...review,
+      }));
+
+      // Add to the collection
+      allReviews.push(...reviewsWithGameInfo);
+    }
+
+    // Generate CSV from all reviews
+    const fields = [
+      { label: "Game Title", value: "gameName" },
+      { label: "Steam App ID", value: "appId" },
+      { label: "Review Content", value: "reviewText" },
+      { label: "Is Recommended", value: "recommended" },
+      { label: "Hours Played", value: "hoursPlayed" },
+      { label: "Review Date", value: "postedAt" },
+    ];
+    const json2csvParser = new Parser({ fields });
+    const csv = json2csvParser.parse(allReviews);
+
+    // Save CSV file
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filename = `steam_reviews_${timestamp}.csv`;
+    const filePath = path.join(downloadDir, filename);
+
+    fs.writeFileSync(filePath, csv);
+
+    // Return download URL and processed data
+    const downloadUrl = `/downloads/${filename}`;
+    const successMessage = `Successfully scraped ${totalGames} games and generated CSV!!!! with ${allReviews.length} unique reviews`;
+    console.log(successMessage);
+
+    res.json({
+      message: successMessage,
+      gamesProcessed: totalGames,
+      totalReviews: allReviews.length,
+      filterStats: {
+        skippedReviewsTotal: skippedReviews.total,
+        skippedDuplicates: skippedReviews.duplicates,
+        skippedNonAlphaNumeric: skippedReviews.nonAlphaNumeric,
+        skippedByGame: skippedReviews.byGame,
+        filterThreshold: nonAlphaThreshold,
+      },
+      downloadUrl,
+      previewData: allReviews.slice(0, 5),
+    });
+  } catch (e) {
+    console.error("Error scraping reviews for CSV:", e);
+    res.status(500).json({
+      message: "Error scraping reviews for CSV",
+      error: e.message,
+    });
+  }
+});
+
+router.post("/scrapeSteamReviewsFilterCSV", async (req, res) => {
+  const { games, count, filterThreshold } = req.body;
+
+  if (!games || !Array.isArray(games) || games.length === 0) {
+    return res.status(400).json({ message: "Valid games array is required" });
+  }
+
+  // Default threshold - if more than 50% non-alphanumeric characters, skip the review
+  const nonAlphaThreshold =
+    filterThreshold !== undefined ? filterThreshold : 0.5;
+
+  try {
+    // Create a directory for downloads if it doesn't exist
+    const downloadDir = path.join(__dirname, "..", "data", "downloads");
+    if (!fs.existsSync(downloadDir)) {
+      fs.mkdirSync(downloadDir, { recursive: true });
+    }
+
+    // Track progress for frontend updates
+    let processedGames = 0;
+    const totalGames = games.length;
+
+    // Array to store all reviews
+    const allReviews = [];
+    const skippedReviews = { total: 0, byGame: {} };
+
+    // Function to check if a review contains too many non-alphanumeric characters
+    const hasTooManyNonAlphaNumeric = (text) => {
+      if (!text) return true; // Skip empty reviews
+
+      // Count alphanumeric characters
+      const alphaNumericCount = (text.match(/[a-zA-Z0-9]/g) || []).length;
+      const totalLength = text.length;
+
+      // Calculate ratio of non-alphanumeric characters
+      if (totalLength === 0) return true;
+      const nonAlphaNumericRatio = 1 - alphaNumericCount / totalLength;
+
+      return nonAlphaNumericRatio > nonAlphaThreshold;
+    };
+
+    // Process each game sequentially
+    for (const game of games) {
+      // Send progress update via SSE or WebSocket if implemented
+      processedGames++;
+      console.log(
+        `Scraping game ${processedGames}/${totalGames}: ${game.name}`
+      );
+
+      // Initialize skip count for this game
+      skippedReviews.byGame[game.name] = 0;
+
+      // We'll need to potentially scrape more than the requested count
+      // to account for skipped reviews
+      let validReviewsCount = 0;
+      let totalScraped = 0;
+      let validReviews = [];
+
+      // Continue scraping until we reach the requested count
+      // or until we've scraped a reasonable amount beyond the requested count
+      // to avoid potential infinite loops
+      const maxAttempts = (count || 10) * 3; // Max 3x the requested count as a safety limit
+
+      while (validReviewsCount < (count || 10) && totalScraped < maxAttempts) {
+        // Scrape a batch of reviews (adjust batch size as needed)
+        const batchSize = Math.min(20, (count || 10) - validReviewsCount + 5);
+        const reviewBatch = await scrapeSteamReviews(
+          game.appId,
+          batchSize,
+          totalScraped
+        );
+
+        if (reviewBatch.length === 0) {
+          // No more reviews available
+          break;
+        }
+
+        totalScraped += reviewBatch.length;
+
+        // Filter the batch and add valid reviews
+        for (const review of reviewBatch) {
+          if (!hasTooManyNonAlphaNumeric(review.reviewText)) {
+            validReviews.push(review);
+            validReviewsCount++;
+
+            // Break if we've reached our target
+            if (validReviewsCount >= (count || 10)) {
+              break;
+            }
+          } else {
+            skippedReviews.total++;
+            skippedReviews.byGame[game.name]++;
+          }
+        }
+      }
+
+      console.log(
+        `Game ${
+          game.name
+        }: collected ${validReviewsCount} valid reviews, skipped ${
+          skippedReviews.byGame[game.name]
+        }`
+      );
+
+      // Add game info to each valid review
+      const reviewsWithGameInfo = validReviews.map((review) => ({
+        gameName: game.name,
+        appId: game.appId,
+        ...review,
+      }));
+
+      // Add to the collection
+      allReviews.push(...reviewsWithGameInfo);
+    }
+
+    // Generate CSV from all reviews
+    const fields = [
+      { label: "Game Title", value: "gameName" },
+      { label: "Steam App ID", value: "appId" },
+      { label: "Review Content", value: "reviewText" },
+      { label: "Is Recommended", value: "recommended" },
+      { label: "Hours Played", value: "hoursPlayed" },
+      { label: "Review Date", value: "postedAt" },
+    ];
+    const json2csvParser = new Parser({ fields });
+    const csv = json2csvParser.parse(allReviews);
+
+    // Save CSV file
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filename = `steam_reviews_${timestamp}.csv`;
+    const filePath = path.join(downloadDir, filename);
+
+    fs.writeFileSync(filePath, csv);
+
+    // Return download URL and processed data
+    const downloadUrl = `/downloads/${filename}`;
+
+    res.json({
+      message: `Successfully scraped ${totalGames} games with ${allReviews.length} reviews, skipped ${skippedReviews.total} and generated CSV  `,
+      gamesProcessed: totalGames,
+      totalReviews: allReviews.length,
+      filterStats: {
+        skippedReviewsTotal: skippedReviews.total,
+        skippedReviewsByGame: skippedReviews.byGame,
+        filterThreshold: nonAlphaThreshold,
+      },
+      downloadUrl,
+      previewData: allReviews.slice(0, 5),
+    });
+
+    console.log("scrapping complete");
+  } catch (e) {
+    console.error("Error scraping reviews for CSV:", e);
+    res.status(500).json({
+      message: "Error scraping reviews for CSV",
+      error: e.message,
+    });
+  }
+});
+
 router.post("/scrapeSteamReviewsCSV", async (req, res) => {
   const { games, count } = req.body;
 
@@ -222,6 +588,7 @@ router.post("/scrapeSteamReviewsCSV", async (req, res) => {
       downloadUrl,
       previewData: allReviews.slice(0, 5), // Send first 5 reviews as preview
     });
+    console.log("Scrapping complete");
   } catch (e) {
     console.error("Error scraping reviews for CSV:", e);
     res.status(500).json({

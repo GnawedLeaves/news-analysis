@@ -1,9 +1,10 @@
 import { useNavigate } from "react-router-dom";
 import { APP_ROUTES } from "../../routes";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import { timeAgo } from "../../globalUtils";
 import { steamApps } from "../../assets/steamIds/steamApps";
+import LoadingComponent from "../../components/loading/LoadingComponent";
 
 interface HeadlinesData {
   text: string;
@@ -32,6 +33,19 @@ interface ScrapingStatus {
   totalTime: number;
 }
 
+interface SteamScrapingResponse {
+  message: string;
+  gamesProcessed: number;
+  totalReviews: number;
+  filterStats: {
+    skippedReviewsTotal: number;
+    skippedReviewsByGame: any;
+    filterThreshold: number;
+  };
+  downloadUrl: string;
+  previewData: SteamReviewItem[];
+}
+
 const Home = () => {
   const [headlinesData, setHeadlinesData] = useState<HeadlinesData[]>([]);
   const [steamReviewsData, setSteamReviewsData] = useState<
@@ -46,11 +60,66 @@ const Home = () => {
     message: "",
     totalTime: 0,
   });
+  const [elapsedTime, setElapsedTime] = useState<number>(0);
+  const timerIntervalRef = useRef<number | null>(null);
 
   const MAX_REVIEWS_PER_GAME = 100;
 
   const navigate = useNavigate();
   const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3002/";
+
+  // Format elapsed time as HH:MM:SS or MM:SS or just seconds based on duration
+  const formatElapsedTime = (seconds: number): string => {
+    if (seconds < 60) {
+      return `${seconds.toFixed(0)} seconds`;
+    } else if (seconds < 3600) {
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = Math.floor(seconds % 60);
+      return `${minutes}:${remainingSeconds
+        .toString()
+        .padStart(2, "0")} minutes`;
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const remainingSeconds = Math.floor(seconds % 60);
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${remainingSeconds
+        .toString()
+        .padStart(2, "0")} hours`;
+    }
+  };
+
+  // Start the timer
+  const startTimer = () => {
+    // Clear any existing interval
+    if (timerIntervalRef.current !== null) {
+      window.clearInterval(timerIntervalRef.current);
+    }
+
+    // Reset elapsed time
+    setElapsedTime(0);
+
+    // Set up the interval to increment the timer every second
+    timerIntervalRef.current = window.setInterval(() => {
+      setElapsedTime((prevTime) => prevTime + 1);
+    }, 1000);
+  };
+
+  // Stop the timer
+  const stopTimer = () => {
+    if (timerIntervalRef.current !== null) {
+      window.clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+  };
+
+  // Clean up interval on component unmount
+  useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current !== null) {
+        window.clearInterval(timerIntervalRef.current);
+      }
+    };
+  }, []);
 
   const getHeadlines = async () => {
     try {
@@ -84,6 +153,7 @@ const Home = () => {
 
   const handleScrapeMultipleGames = async () => {
     if (numberOfGames < 1 || numberOfReivewsPerGame < 1) return;
+
     // Reset status and set loading to true
     setScrapingStatus({
       isLoading: true,
@@ -92,42 +162,52 @@ const Home = () => {
       totalTime: 0,
     });
 
-    const startTime = Date.now();
+    // Start the timer
+    startTimer();
 
     try {
       // Limit the number of games to the available games in the array
       const gamesToScrape = Math.min(numberOfGames, steamApps.length);
 
       // Call the backend endpoint to scrape multiple games
-      const response = await axios.post(`${API_URL}scrapeSteamReviewsCSV`, {
-        games: steamApps.slice(0, gamesToScrape),
-        count: numberOfReivewsPerGame,
-      });
+      const response = await axios.post(
+        `${API_URL}scrapeSteamReviewsFilterCSV`,
+        {
+          games: steamApps.slice(0, gamesToScrape),
+          count: numberOfReivewsPerGame,
+        }
+      );
 
-      const endTime = Date.now();
-      const totalTime = (endTime - startTime) / 1000; // in seconds
+      console.log({ response });
 
-      setScrapingStatus({
+      // Stop the timer
+      stopTimer();
+
+      // Save final elapsed time to status
+      setScrapingStatus((prev) => ({
+        ...prev,
         isLoading: false,
         progress: 100,
-        message: `Successfully scraped ${gamesToScrape} games and generated CSV!`,
-        totalTime,
-      });
+        message: response.data.message,
+        totalTime: elapsedTime,
+      }));
 
-      // If the backend returns a download URL, trigger the download
-      if (response.data.downloadUrl) {
-        window.location.href = response.data.downloadUrl;
-      }
+      setResponseMessage(response.data);
+      showSuccessMessageToDisplay();
     } catch (error) {
+      // Stop the timer on error
+      stopTimer();
+
       console.error("Error scraping games:", error);
-      setScrapingStatus({
+      setScrapingStatus((prev) => ({
+        ...prev,
         isLoading: false,
         progress: 0,
         message: `Error: ${
           error instanceof Error ? error.message : "Unknown error"
         }`,
-        totalTime: (Date.now() - startTime) / 1000,
-      });
+        totalTime: elapsedTime,
+      }));
     }
   };
 
@@ -135,6 +215,14 @@ const Home = () => {
     getHeadlines();
     getSteamReviews();
   }, []);
+
+  const [responseMessage, setResponseMessage] =
+    useState<SteamScrapingResponse>();
+  const showSuccessMessageToDisplay = () => {
+    setTimeout(() => {
+      setResponseMessage(undefined);
+    }, 60000);
+  };
 
   return (
     <>
@@ -215,7 +303,7 @@ const Home = () => {
 
         {scrapingStatus.isLoading && (
           <div style={{ marginTop: "1rem" }}>
-            <div
+            {/* <div
               style={{
                 height: "20px",
                 backgroundColor: "#e0e0e0",
@@ -231,17 +319,21 @@ const Home = () => {
                   transition: "width 0.3s ease",
                 }}
               ></div>
-            </div>
+            </div> */}
+            <LoadingComponent loadingType="dots" />
+
             <p>{scrapingStatus.message}</p>
-            <p>Time elapsed: {scrapingStatus.totalTime.toFixed(1)} seconds</p>
+            <p>Time elapsed: {formatElapsedTime(elapsedTime)}</p>
           </div>
         )}
 
         {!scrapingStatus.isLoading && scrapingStatus.message && (
           <div style={{ marginTop: "1rem" }}>
-            <p>{scrapingStatus.message}</p>
+            <p style={{ color: "green", fontWeight: "bold", fontSize: "20" }}>
+              {scrapingStatus.message}
+            </p>
             {scrapingStatus.totalTime > 0 && (
-              <p>Total time: {scrapingStatus.totalTime.toFixed(1)} seconds</p>
+              <p>Total time: {formatElapsedTime(scrapingStatus.totalTime)}</p>
             )}
           </div>
         )}
