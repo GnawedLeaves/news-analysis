@@ -303,23 +303,6 @@ const Home = () => {
 
         {scrapingStatus.isLoading && (
           <div style={{ marginTop: "1rem" }}>
-            {/* <div
-              style={{
-                height: "20px",
-                backgroundColor: "#e0e0e0",
-                borderRadius: "10px",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  height: "100%",
-                  width: `${scrapingStatus.progress}%`,
-                  backgroundColor: "#4CAF50",
-                  transition: "width 0.3s ease",
-                }}
-              ></div>
-            </div> */}
             <LoadingComponent loadingType="dots" />
 
             <p>{scrapingStatus.message}</p>

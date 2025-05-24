@@ -355,7 +355,6 @@ router.post("/scrapeSteamReviewsFilterAndDuplicatesCSV", async (req, res) => {
     });
   }
 });
-
 router.post("/scrapeSteamReviewsFilterCSV", async (req, res) => {
   const { games, count, filterThreshold } = req.body;
 
@@ -408,56 +407,58 @@ router.post("/scrapeSteamReviewsFilterCSV", async (req, res) => {
       // Initialize skip count for this game
       skippedReviews.byGame[game.name] = 0;
 
-      // We'll need to potentially scrape more than the requested count
-      // to account for skipped reviews
-      let validReviewsCount = 0;
+      // Track the number of reviews we've attempted to scrape
       let totalScraped = 0;
       let validReviews = [];
+      let noMoreReviews = false;
+      const requestedCount = count || 10;
 
-      // Continue scraping until we reach the requested count
-      // or until we've scraped a reasonable amount beyond the requested count
-      // to avoid potential infinite loops
-      const maxAttempts = (count || 10) * 3; // Max 3x the requested count as a safety limit
+      // Scrape reviews in batches
+      while (validReviews.length < requestedCount && !noMoreReviews) {
+        // Calculate how many more reviews we need to try to fetch
+        const remainingToFetch = requestedCount - validReviews.length;
+        // Fetch a bit more than we need to account for filtered reviews
+        const batchSize = Math.min(20, remainingToFetch + 5);
 
-      while (validReviewsCount < (count || 10) && totalScraped < maxAttempts) {
-        // Scrape a batch of reviews (adjust batch size as needed)
-        const batchSize = Math.min(20, (count || 10) - validReviewsCount + 5);
         const reviewBatch = await scrapeSteamReviews(
           game.appId,
           batchSize,
           totalScraped
         );
 
-        if (reviewBatch.length === 0) {
-          // No more reviews available
-          break;
-        }
-
         totalScraped += reviewBatch.length;
+
+        // If we got no reviews or fewer than we asked for, there are no more reviews available
+        if (reviewBatch.length === 0 || reviewBatch.length < batchSize) {
+          noMoreReviews = true;
+        }
 
         // Filter the batch and add valid reviews
         for (const review of reviewBatch) {
           if (!hasTooManyNonAlphaNumeric(review.reviewText)) {
             validReviews.push(review);
-            validReviewsCount++;
-
-            // Break if we've reached our target
-            if (validReviewsCount >= (count || 10)) {
-              break;
-            }
           } else {
             skippedReviews.total++;
             skippedReviews.byGame[game.name]++;
           }
         }
+
+        // If we're not getting any more valid reviews despite fetching more, stop to prevent infinite loops
+        if (reviewBatch.length > 0 && validReviews.length === 0) {
+          console.log(
+            `All reviews for ${game.name} are being filtered out. Stopping.`
+          );
+          noMoreReviews = true;
+        }
       }
 
+      // Limit to the requested count (in case we got more valid reviews than needed)
+      validReviews = validReviews.slice(0, requestedCount);
+
       console.log(
-        `Game ${
-          game.name
-        }: collected ${validReviewsCount} valid reviews, skipped ${
-          skippedReviews.byGame[game.name]
-        }`
+        `Game ${game.name}: collected ${
+          validReviews.length
+        } valid reviews, skipped ${skippedReviews.byGame[game.name]}`
       );
 
       // Add game info to each valid review
@@ -494,7 +495,7 @@ router.post("/scrapeSteamReviewsFilterCSV", async (req, res) => {
     const downloadUrl = `/downloads/${filename}`;
 
     res.json({
-      message: `Successfully scraped ${totalGames} games with ${allReviews.length} reviews, skipped ${skippedReviews.total} and generated CSV  `,
+      message: `Successfully scraped ${totalGames} games with ${allReviews.length} reviews, skipped ${skippedReviews.total} and generated CSV`,
       gamesProcessed: totalGames,
       totalReviews: allReviews.length,
       filterStats: {
@@ -515,7 +516,6 @@ router.post("/scrapeSteamReviewsFilterCSV", async (req, res) => {
     });
   }
 });
-
 router.post("/scrapeSteamReviewsCSV", async (req, res) => {
   const { games, count } = req.body;
 
