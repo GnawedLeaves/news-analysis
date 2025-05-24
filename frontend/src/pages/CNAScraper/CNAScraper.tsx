@@ -10,6 +10,7 @@ import {
   Row,
   Col,
   Statistic,
+  Progress,
 } from "antd";
 import {
   ReloadOutlined,
@@ -17,6 +18,9 @@ import {
   CalendarOutlined,
   LinkOutlined,
   PieChartOutlined,
+  SmileOutlined,
+  FrownOutlined,
+  MehOutlined,
 } from "@ant-design/icons";
 import {
   Chart as ChartJS,
@@ -30,6 +34,7 @@ import {
 } from "chart.js";
 import { Bar, Doughnut } from "react-chartjs-2";
 import axios from "axios";
+import { analyzeSentiment, SentimentResult } from "../utils";
 
 ChartJS.register(
   CategoryScale,
@@ -64,6 +69,7 @@ interface FullArticleData {
   publishedAt: string;
   image?: string;
   headline: string;
+  sentiment: SentimentResult;
 }
 
 const NewsScraperPage = () => {
@@ -134,6 +140,7 @@ const NewsScraperPage = () => {
           link: headline.link,
           text: articleData.articleText,
           image: articleData.articleImg,
+          sentiment: analyzeSentiment(articleData.articleText),
         };
         articleArray.push(fullArticleData);
       }
@@ -142,6 +149,7 @@ const NewsScraperPage = () => {
     setLoading(false);
     setFullArticlesData(articleArray);
   };
+
   useEffect(() => {
     getHeadlines();
   }, []);
@@ -178,17 +186,6 @@ const NewsScraperPage = () => {
     return luminance > 0.9;
   };
 
-  const backgroundColor = [
-    "#ff6b6b",
-    "#4ecdc4",
-    "#45b7d1",
-    "#96ceb4",
-    "#ffeaa7",
-    "#dda0dd",
-    "#98d8c8",
-    "#6c5ce7",
-  ];
-
   const getCategoryData = () => {
     const categoryCount: { [key: string]: number } = {};
     fullArticlesData.forEach((headline) => {
@@ -204,6 +201,33 @@ const NewsScraperPage = () => {
           backgroundColor: generateBackgroundColors(
             Object.keys(categoryCount).length
           ),
+          borderWidth: 0,
+        },
+      ],
+    };
+  };
+
+  const getSentimentData = () => {
+    const sentimentCount = {
+      positive: 0,
+      negative: 0,
+      neutral: 0,
+    };
+
+    fullArticlesData.forEach((article) => {
+      sentimentCount[article.sentiment.label]++;
+    });
+
+    return {
+      labels: ["Positive", "Negative", "Neutral"],
+      datasets: [
+        {
+          data: [
+            sentimentCount.positive,
+            sentimentCount.negative,
+            sentimentCount.neutral,
+          ],
+          backgroundColor: ["#52c41a", "#ff4d4f", "#faad14"],
           borderWidth: 0,
         },
       ],
@@ -246,7 +270,7 @@ const NewsScraperPage = () => {
   const getCategoryColors = (category: string) => {
     const colors: { [key: string]: string } = {
       Technology: "blue",
-      Business: "green",
+      Business: "",
       Environment: "lime",
       Sports: "orange",
       Health: "red",
@@ -256,6 +280,36 @@ const NewsScraperPage = () => {
     };
     return colors[category] || "default";
   };
+
+  const getSentimentIcon = (sentiment: SentimentResult) => {
+    switch (sentiment.label) {
+      case "positive":
+        return <SmileOutlined style={{ color: "#52c41a" }} />;
+      case "negative":
+        return <FrownOutlined style={{ color: "#ff4d4f" }} />;
+      default:
+        return <MehOutlined style={{ color: "#faad14" }} />;
+    }
+  };
+
+  const getSentimentColor = (sentiment: SentimentResult) => {
+    switch (sentiment.label) {
+      case "positive":
+        return "success";
+      case "negative":
+        return "error";
+      default:
+        return "warning";
+    }
+  };
+
+  const averageSentiment =
+    fullArticlesData.length > 0
+      ? fullArticlesData.reduce(
+          (sum, article) => sum + article.sentiment.score,
+          0
+        ) / fullArticlesData.length
+      : 0;
 
   return (
     <div style={{ padding: "24px", background: "#f5f5f5", minHeight: "100vh" }}>
@@ -267,7 +321,9 @@ const NewsScraperPage = () => {
           marginBottom: "24px",
         }}
       >
-        <AntTitle level={1}>News Headlines Scraper</AntTitle>
+        <AntTitle level={1}>
+          News Headlines Scraper with Sentiment Analysis
+        </AntTitle>
         <Button
           type="primary"
           icon={<ReloadOutlined />}
@@ -281,7 +337,7 @@ const NewsScraperPage = () => {
 
       {/* Statistics */}
       <Row gutter={16} style={{ marginBottom: "24px" }}>
-        <Col span={6}>
+        <Col span={4}>
           <Card>
             <Statistic
               title="Total Articles"
@@ -290,7 +346,7 @@ const NewsScraperPage = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col span={4}>
           <Card>
             <Statistic
               title="Categories"
@@ -299,28 +355,59 @@ const NewsScraperPage = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col span={4}>
           <Card>
             <Statistic
-              title="With Images"
-              value={fullArticlesData.filter((h) => h.image).length}
-              prefix={<GlobalOutlined />}
+              title="Positive News"
+              value={
+                fullArticlesData.filter((a) => a.sentiment.label === "positive")
+                  .length
+              }
+              prefix={<SmileOutlined />}
+              valueStyle={{ color: "#52c41a" }}
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col span={4}>
           <Card>
             <Statistic
-              title="Recent (< 6hrs)"
+              title="Negative News"
               value={
-                fullArticlesData.filter((h) => {
-                  const diffHours =
-                    (Date.now() - new Date(h.publishedAt).getTime()) /
-                    (1000 * 60 * 60);
-                  return diffHours <= 6;
-                }).length
+                fullArticlesData.filter((a) => a.sentiment.label === "negative")
+                  .length
               }
-              prefix={<CalendarOutlined />}
+              prefix={<FrownOutlined />}
+              valueStyle={{ color: "#ff4d4f" }}
+            />
+          </Card>
+        </Col>
+        <Col span={4}>
+          <Card>
+            <Statistic
+              title="Neutral News"
+              value={
+                fullArticlesData.filter((a) => a.sentiment.label === "neutral")
+                  .length
+              }
+              prefix={<MehOutlined />}
+              valueStyle={{ color: "#faad14" }}
+            />
+          </Card>
+        </Col>
+        <Col span={4}>
+          <Card>
+            <Statistic
+              title="Avg Sentiment"
+              value={averageSentiment.toFixed(2)}
+              prefix={
+                averageSentiment > 0.1 ? (
+                  <SmileOutlined style={{ color: "#52c41a" }} />
+                ) : averageSentiment < -0.1 ? (
+                  <FrownOutlined style={{ color: "#ff4d4f" }} />
+                ) : (
+                  <MehOutlined style={{ color: "#faad14" }} />
+                )
+              }
             />
           </Card>
         </Col>
@@ -329,7 +416,7 @@ const NewsScraperPage = () => {
       {/* Charts */}
       {fullArticlesData.length > 0 && (
         <Row gutter={16} style={{ marginBottom: "24px" }}>
-          <Col span={12}>
+          <Col span={8}>
             <Card title="News Categories Distribution">
               <div
                 style={{
@@ -354,7 +441,32 @@ const NewsScraperPage = () => {
               </div>
             </Card>
           </Col>
-          <Col span={12}>
+          <Col span={8}>
+            <Card title="Sentiment Analysis Distribution">
+              <div
+                style={{
+                  height: "300px",
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <Doughnut
+                  data={getSentimentData()}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                      legend: {
+                        position: "bottom",
+                      },
+                    },
+                  }}
+                />
+              </div>
+            </Card>
+          </Col>
+          <Col span={8}>
             <Card title="Articles by Time Published">
               <div style={{ height: "300px" }}>
                 <Bar
@@ -385,7 +497,7 @@ const NewsScraperPage = () => {
       )}
 
       {/* News Headlines List */}
-      <Card title="Latest Headlines">
+      <Card title="Latest Headlines with Sentiment Analysis">
         <List
           grid={{ gutter: 16, xs: 1, sm: 1, md: 2, lg: 2, xl: 2, xxl: 3 }}
           dataSource={fullArticlesData}
@@ -395,15 +507,13 @@ const NewsScraperPage = () => {
                 hoverable
                 cover={
                   headline.image && (
-                    <>
-                      <Image
-                        alt={headline.text}
-                        src={headline.image}
-                        height={200}
-                        style={{ objectFit: "cover" }}
-                        preview={false}
-                      />
-                    </>
+                    <Image
+                      alt={headline.text}
+                      src={headline.image}
+                      height={200}
+                      style={{ objectFit: "cover" }}
+                      preview={false}
+                    />
                   )
                 }
                 actions={[
@@ -419,17 +529,31 @@ const NewsScraperPage = () => {
                 <Card.Meta
                   title={
                     <div>
-                      <Tag
-                        color={getCategoryColors(headline.category)}
-                        style={{ marginBottom: "8px" }}
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "8px",
+                          marginBottom: "8px",
+                          flexWrap: "wrap",
+                        }}
                       >
-                        {headline.category}
-                      </Tag>
+                        <Tag color={getCategoryColors(headline.category)}>
+                          {headline.category}
+                        </Tag>
+                        <Tag
+                          color={getSentimentColor(headline.sentiment)}
+                          icon={getSentimentIcon(headline.sentiment)}
+                        >
+                          {headline.sentiment.label.toUpperCase()} (
+                          {headline.sentiment.confidence}%)
+                        </Tag>
+                      </div>
                       <div
                         style={{
                           fontSize: "16px",
                           lineHeight: "1.4",
                           textWrap: "wrap",
+                          marginBottom: "8px",
                         }}
                       >
                         {headline.headline}
@@ -439,11 +563,30 @@ const NewsScraperPage = () => {
                           fontSize: "12px",
                           lineHeight: "1.4",
                           textWrap: "wrap",
+                          color: "#666",
                         }}
                       >
-                        {headline.text.length > 100
-                          ? headline.text.slice(0, 100) + "..."
+                        {headline.text.length > 150
+                          ? headline.text.slice(0, 150) + "..."
                           : headline.text}
+                      </div>
+                      <div style={{ marginTop: "8px" }}>
+                        <Text strong style={{ fontSize: "11px" }}>
+                          Sentiment Score:{" "}
+                        </Text>
+                        <Progress
+                          percent={Math.abs(headline.sentiment.score) * 100}
+                          size="small"
+                          status={
+                            headline.sentiment.label === "positive"
+                              ? "success"
+                              : headline.sentiment.label === "negative"
+                              ? "exception"
+                              : "active"
+                          }
+                          format={() => `${headline.sentiment.score}`}
+                          style={{ marginTop: "4px" }}
+                        />
                       </div>
                     </div>
                   }
