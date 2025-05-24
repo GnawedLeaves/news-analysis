@@ -373,11 +373,15 @@ const Home = () => {
               Read more
             </a>
             {item.image && (
-              <img
-                src={item.image}
-                alt={item.text}
-                style={{ width: "100px" }}
-              />
+              <>
+                <img
+                  src={item.image}
+                  alt={item.text}
+                  style={{ width: "100px" }}
+                />
+
+                {item.image}
+              </>
             )}
           </div>
         ))}
