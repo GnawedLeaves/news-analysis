@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Card,
   Button,
@@ -9,7 +9,6 @@ import {
   Tag,
   Avatar,
   List,
-  Divider,
   Statistic,
   Row,
   Col,
@@ -33,6 +32,8 @@ import {
 } from "chart.js";
 import { Bar, Doughnut } from "react-chartjs-2";
 import axios from "axios";
+import { APP_ROUTES } from "../../routes";
+import { useNavigate } from "react-router-dom";
 
 ChartJS.register(
   CategoryScale,
@@ -102,7 +103,7 @@ const SteamReviewsPage = () => {
   const [responseMessage, setResponseMessage] =
     useState<SteamScrapingResponse>();
   const timerIntervalRef = useRef<number | null>(null);
-
+  const navigate = useNavigate();
   const MAX_REVIEWS_PER_GAME = 100;
   const API_URL = "http://localhost:3002/";
 
@@ -269,7 +270,15 @@ const SteamReviewsPage = () => {
   return (
     <div style={{ padding: "24px", background: "#f5f5f5", minHeight: "100vh" }}>
       <AntTitle level={1}>Steam Reviews Scraper</AntTitle>
-
+      <Button
+        type="text"
+        onClick={() => {
+          navigate(APP_ROUTES.cna);
+        }}
+        size="large"
+      >
+        Go to News
+      </Button>
       {/* Scraper Controls */}
       <Card title="Scrape Steam Reviews" style={{ marginBottom: "24px" }}>
         <Row gutter={16} align="middle">

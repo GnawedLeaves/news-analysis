@@ -35,6 +35,8 @@ import {
 import { Bar, Doughnut } from "react-chartjs-2";
 import axios from "axios";
 import { analyzeSentiment, SentimentResult } from "../utils";
+import { useNavigate } from "react-router-dom";
+import { APP_ROUTES } from "../../routes";
 
 ChartJS.register(
   CategoryScale,
@@ -79,6 +81,8 @@ const NewsScraperPage = () => {
   );
 
   const [loading, setLoading] = useState(false);
+
+  const navigate = useNavigate();
 
   const API_URL = "http://localhost:3002/";
 
@@ -324,6 +328,15 @@ const NewsScraperPage = () => {
         <AntTitle level={1}>
           News Headlines Scraper with Sentiment Analysis
         </AntTitle>
+        <Button
+          type="text"
+          onClick={() => {
+            navigate(APP_ROUTES.steamReview);
+          }}
+          size="large"
+        >
+          Go to Steam Reviews
+        </Button>
         <Button
           type="primary"
           icon={<ReloadOutlined />}
