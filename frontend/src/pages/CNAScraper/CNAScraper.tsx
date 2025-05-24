@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   Button,
@@ -51,11 +51,26 @@ interface HeadlinesData {
   image?: string;
 }
 
-interface ArticleData {}
+interface ArticleData {
+  articleImg: string;
+  articleText: string;
+  articleCatagory: string;
+}
+
+interface FullArticleData {
+  text: string;
+  link: string;
+  category: string;
+  publishedAt: string;
+  image?: string;
+  headline: string;
+}
 
 const NewsScraperPage = () => {
   const [headlinesData, setHeadlinesData] = useState<HeadlinesData[]>([]);
-  const [articlesData, setArticlesData] = useState<ArticleData[]>([]);
+  const [fullArticlesData, setFullArticlesData] = useState<FullArticleData[]>(
+    []
+  );
 
   const [loading, setLoading] = useState(false);
 
@@ -92,30 +107,91 @@ const NewsScraperPage = () => {
     }
   };
 
-  const getArticleDetails = async (url: string) => {
-    setLoading(true);
+  const getArticleDetails = async (url: string): Promise<ArticleData> => {
     try {
       const response = await axios.post(`${API_URL}scrapeCnaArticle`, {
         url,
       });
 
-      console.log(response.data.data);
-      if (response) {
-        setArticlesData((prev) => [...prev, response.data.data]);
-      }
+      return response.data.data;
     } catch (e) {
       console.error("error getting headlines", e);
+      throw e;
     }
   };
 
+  const generateArticleObject = async () => {
+    const articleArray: FullArticleData[] = [];
+
+    setLoading(true);
+    for (const headline of headlinesData) {
+      if (headline.link) {
+        const articleData = await getArticleDetails(headline.link);
+        const fullArticleData: FullArticleData = {
+          headline: headline.text,
+          category: headline.category || articleData.articleCatagory,
+          publishedAt: headline.publishedAt,
+          link: headline.link,
+          text: articleData.articleText,
+          image: articleData.articleImg,
+        };
+        articleArray.push(fullArticleData);
+      }
+    }
+
+    setLoading(false);
+    setFullArticlesData(articleArray);
+  };
   useEffect(() => {
     getHeadlines();
   }, []);
 
-  // Chart data for news categories
+  useEffect(() => {
+    if (headlinesData.length > 0) {
+      generateArticleObject();
+    }
+  }, [headlinesData]);
+
+  const generateBackgroundColors = (count: number): string[] => {
+    const colors: string[] = [];
+
+    while (colors.length < count) {
+      const color = `#${Math.floor(Math.random() * 0xffffff)
+        .toString(16)
+        .padStart(6, "0")}`;
+
+      if (!isTooLight(color)) {
+        colors.push(color);
+      }
+    }
+
+    return colors;
+  };
+
+  const isTooLight = (hex: string): boolean => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+    return luminance > 0.9;
+  };
+
+  const backgroundColor = [
+    "#ff6b6b",
+    "#4ecdc4",
+    "#45b7d1",
+    "#96ceb4",
+    "#ffeaa7",
+    "#dda0dd",
+    "#98d8c8",
+    "#6c5ce7",
+  ];
+
   const getCategoryData = () => {
     const categoryCount: { [key: string]: number } = {};
-    headlinesData.forEach((headline) => {
+    fullArticlesData.forEach((headline) => {
       categoryCount[headline.category] =
         (categoryCount[headline.category] || 0) + 1;
     });
@@ -125,16 +201,9 @@ const NewsScraperPage = () => {
       datasets: [
         {
           data: Object.values(categoryCount),
-          backgroundColor: [
-            "#ff6b6b",
-            "#4ecdc4",
-            "#45b7d1",
-            "#96ceb4",
-            "#ffeaa7",
-            "#dda0dd",
-            "#98d8c8",
-            "#6c5ce7",
-          ],
+          backgroundColor: generateBackgroundColors(
+            Object.keys(categoryCount).length
+          ),
           borderWidth: 0,
         },
       ],
@@ -150,7 +219,7 @@ const NewsScraperPage = () => {
     };
 
     const now = Date.now();
-    headlinesData.forEach((headline) => {
+    fullArticlesData.forEach((headline) => {
       const publishedTime = new Date(headline.publishedAt).getTime();
       const diffHours = (now - publishedTime) / (1000 * 60 * 60);
 
@@ -216,7 +285,7 @@ const NewsScraperPage = () => {
           <Card>
             <Statistic
               title="Total Articles"
-              value={headlinesData.length}
+              value={fullArticlesData.length}
               prefix={<GlobalOutlined />}
             />
           </Card>
@@ -225,7 +294,7 @@ const NewsScraperPage = () => {
           <Card>
             <Statistic
               title="Categories"
-              value={new Set(headlinesData.map((h) => h.category)).size}
+              value={new Set(fullArticlesData.map((h) => h.category)).size}
               prefix={<PieChartOutlined />}
             />
           </Card>
@@ -234,7 +303,7 @@ const NewsScraperPage = () => {
           <Card>
             <Statistic
               title="With Images"
-              value={headlinesData.filter((h) => h.image).length}
+              value={fullArticlesData.filter((h) => h.image).length}
               prefix={<GlobalOutlined />}
             />
           </Card>
@@ -244,7 +313,7 @@ const NewsScraperPage = () => {
             <Statistic
               title="Recent (< 6hrs)"
               value={
-                headlinesData.filter((h) => {
+                fullArticlesData.filter((h) => {
                   const diffHours =
                     (Date.now() - new Date(h.publishedAt).getTime()) /
                     (1000 * 60 * 60);
@@ -258,7 +327,7 @@ const NewsScraperPage = () => {
       </Row>
 
       {/* Charts */}
-      {headlinesData.length > 0 && (
+      {fullArticlesData.length > 0 && (
         <Row gutter={16} style={{ marginBottom: "24px" }}>
           <Col span={12}>
             <Card title="News Categories Distribution">
@@ -319,7 +388,7 @@ const NewsScraperPage = () => {
       <Card title="Latest Headlines">
         <List
           grid={{ gutter: 16, xs: 1, sm: 1, md: 2, lg: 2, xl: 2, xxl: 3 }}
-          dataSource={headlinesData}
+          dataSource={fullArticlesData}
           renderItem={(headline) => (
             <List.Item>
               <Card
@@ -356,8 +425,25 @@ const NewsScraperPage = () => {
                       >
                         {headline.category}
                       </Tag>
-                      <div style={{ fontSize: "16px", lineHeight: "1.4" }}>
-                        {headline.text}
+                      <div
+                        style={{
+                          fontSize: "16px",
+                          lineHeight: "1.4",
+                          textWrap: "wrap",
+                        }}
+                      >
+                        {headline.headline}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          lineHeight: "1.4",
+                          textWrap: "wrap",
+                        }}
+                      >
+                        {headline.text.length > 100
+                          ? headline.text.slice(0, 100) + "..."
+                          : headline.text}
                       </div>
                     </div>
                   }

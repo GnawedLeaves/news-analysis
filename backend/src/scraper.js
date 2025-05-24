@@ -24,6 +24,25 @@ router.post("/scrapeCnaArticle", async (req, res) => {
   try {
     const response = await axios.get(url);
     const $ = cheerio.load(response.data);
+
+    const paragraphs = $(".text-long p")
+      .map((i, el) => $(el).text().trim())
+      .get();
+
+    const text = paragraphs.join("\n\n");
+    const ogImage = $('meta[property="og:image"]').attr("content");
+
+    const catagory = $(".content-detail__category a").text().trim();
+
+    const articleObj = {
+      articleImg: ogImage,
+      articleText: text,
+      articleCatagory: catagory,
+    };
+    res.json({
+      data: articleObj,
+      message: "Successfuly scraped article",
+    });
   } catch (e) {
     console.error("error getting article data ");
   }
