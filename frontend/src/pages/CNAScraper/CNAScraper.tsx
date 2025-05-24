@@ -51,8 +51,12 @@ interface HeadlinesData {
   image?: string;
 }
 
+interface ArticleData {}
+
 const NewsScraperPage = () => {
   const [headlinesData, setHeadlinesData] = useState<HeadlinesData[]>([]);
+  const [articlesData, setArticlesData] = useState<ArticleData[]>([]);
+
   const [loading, setLoading] = useState(false);
 
   const API_URL = "http://localhost:3002/";
@@ -85,6 +89,22 @@ const NewsScraperPage = () => {
       console.log("error getting headlines", e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const getArticleDetails = async (url: string) => {
+    setLoading(true);
+    try {
+      const response = await axios.post(`${API_URL}scrapeCnaArticle`, {
+        url,
+      });
+
+      console.log(response.data.data);
+      if (response) {
+        setArticlesData((prev) => [...prev, response.data.data]);
+      }
+    } catch (e) {
+      console.error("error getting headlines", e);
     }
   };
 

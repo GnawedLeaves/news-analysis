@@ -9,12 +9,25 @@ const { Parser } = require("json2csv");
 
 const baseUrl = "https://www.amazon.com";
 const cnaBaseUrl = "https://www.channelnewsasia.com";
+const cnaArticleBaseUrl =
+  "https://www.channelnewsasia.com/sport/liverpools-salah-named-premier-league-player-season-5151086 ";
 const bbcBaseUrl = "https://www.bbc.com/news";
 const quotesToScrapeUrl = "https://quotes.toscrape.com/page/2/";
 router.get("/", (req, res) => {
   res.send("Scraper API is up!");
 });
 
+router.post("/scrapeCnaArticle", async (req, res) => {
+  const { url } = req.body || cnaArticleBaseUrl;
+  if (!url) return;
+
+  try {
+    const response = await axios.get(url);
+    const $ = cheerio.load(response.data);
+  } catch (e) {
+    console.error("error getting article data ");
+  }
+});
 router.post("/scrapeCNA", async (req, res) => {
   const { url } = req.body || cnaBaseUrl;
   if (!url) return;
